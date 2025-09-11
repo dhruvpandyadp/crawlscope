@@ -5,16 +5,16 @@
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 [![Maintenance](https://img.shields.io/badge/Maintained-Yes-green)](https://github.com/dhruvpandyadp/crawlscope)
 
-**CrawlScope** is a powerful, user-friendly web application that analyzes your website's `robots.txt` file to determine which crawlers (search engines, AI bots, SEO tools, and more) are allowed or blocked from accessing your site. With **336+ verified crawlers** across **15 comprehensive categories**, CrawlScope provides detailed insights to optimize SEO, control AI training data usage, and manage bot access effectively.
+**CrawlScope** is a powerful, user-friendly web application that analyzes your website's `robots.txt` file to determine which crawlers (search engines, AI bots, SEO tools, and more) are allowed or blocked from accessing your site. With **300+ verified crawlers** across **15 comprehensive categories**, CrawlScope provides detailed insights to optimize SEO, control AI training data usage, and manage bot access effectively.
 
-![Crawler Analysis](https://img.shields.io/badge/Crawler%20Analysis-336%2B%20Crawlers-brightgreen)
+![Crawler Analysis](https://img.shields.io/badge/Crawler%20Analysis-300%2B%20Crawlers-brightgreen)
 ![Categories](https://img.shields.io/badge/Categories-15-blue)
 ![Download Reports](https://img.shields.io/badge/Download-CSV%20Reports-orange)
 
 ## ✨ Key Features
 
 ### 🚀 **Comprehensive Crawler Analysis**
-- 📊 **336+ Crawlers Analyzed** - Covers search engines, AI crawlers, SEO tools, social media bots, and more
+- 📊 **300+ Crawlers Analyzed** - Covers search engines, AI crawlers, SEO tools, social media bots, and more
 - 🗂 **15 Categories** - Organized into Search Engines, AI Crawlers, SEO & Analytics, Social Media, and 11 other categories
 - 🔍 **Access Status** - Clear ✅ Allowed or ❌ Blocked indicators for each crawler
 - ⏱ **Crawl Delay** - Displays crawl delay settings for each user agent
