@@ -213,7 +213,7 @@ with st.sidebar:
     - **Infrastructure & CDN** - Cloudflare services, CDN providers
     - **Miscellaneous & Validators** - W3C validators, CMS platforms, generic bots
     
-    **Total: 336+ verified crawlers** across all categories.
+    **Total: 300+ verified crawlers** across all categories.
     
     Understand exactly which crawler types can access your content and optimize your robots.txt for better SEO, AI training control, and comprehensive bot management.
     """)
