@@ -83,7 +83,7 @@
 
 ## 📊 Analysis Categories
 
-CrawlScope covers **336+ crawlers** across **15 categories**:
+CrawlScope covers **300+ crawlers** across **15 categories**:
 
 1. **Search Engines** - Google, Bing, Baidu, Yandex, DuckDuckGo, and 40+ others
 2. **AI Crawlers** - ChatGPT, Claude, Perplexity, Gemini, and other LLM bots
@@ -147,7 +147,7 @@ For a website with a restrictive `robots.txt`:
 ### Architecture
 - **URL Normalization**: Ensures consistent URL handling
 - **robots.txt Parsing**: Accurate interpretation of rules and crawl delays
-- **Crawler Database**: 336+ verified user agents across 15 categories
+- **Crawler Database**: 300+ verified user agents across 15 categories
 - **Results Processing**: Efficient DataFrame-based analysis
 - **Insight Generation**: Dynamic recommendations based on block rates
 
@@ -205,7 +205,7 @@ Benefit: Reliable site performance tracking
 ## 🚀 Advanced Features
 
 ### Analysis Engine
-- **Comprehensive Crawler Database**: 336+ verified user agents
+- **Comprehensive Crawler Database**: 300+ verified user agents
 - **Accurate Parsing**: Handles complex `robots.txt` rules
 - **Crawl Delay Support**: Reports delays for each crawler
 - **Category Aggregation**: Summarizes access by category
@@ -255,7 +255,7 @@ streamlit run app.py
 ```
 
 ### What You'll Get:
-- ⚡ **Instant Analysis** of 336+ crawlers
+- ⚡ **Instant Analysis** of 300+ crawlers
 - 📊 **Detailed Reports** with category breakdowns
 - 💡 **Actionable Insights** for SEO and privacy
 - 📥 **CSV Exports** for offline analysis
