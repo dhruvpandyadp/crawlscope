@@ -1,9 +1,9 @@
 import streamlit as st
-import urllib.robotparser
 import requests
 from urllib.parse import urljoin, urlparse
 import pandas as pd
 from io import StringIO
+import re
 
 # Configure page
 st.set_page_config(
@@ -650,6 +650,146 @@ CRAWLERS = {
     }
 }
 
+class RobustRobotsParser:
+    """Custom robots.txt parser that handles malformed files properly"""
+    
+    def __init__(self, robots_content, base_url):
+        self.robots_content = robots_content
+        self.base_url = base_url
+        self.rules = self._parse_robots()
+    
+    def _parse_robots(self):
+        """Parse robots.txt content into structured rules"""
+        rules = {}
+        current_user_agents = []
+        
+        lines = self.robots_content.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Skip empty lines and comments
+            if not line or line.startswith('#'):
+                continue
+            
+            # Handle User-agent directive
+            if line.lower().startswith('user-agent:'):
+                user_agent = line[11:].strip()
+                if user_agent:
+                    current_user_agents = [user_agent]
+                    if user_agent not in rules:
+                        rules[user_agent] = {
+                            'disallows': [],
+                            'allows': [],
+                            'crawl_delay': None
+                        }
+            
+            # Handle Disallow directive
+            elif line.lower().startswith('disallow:') and current_user_agents:
+                path = line[9:].strip()
+                for ua in current_user_agents:
+                    if ua in rules:
+                        rules[ua]['disallows'].append(path)
+            
+            # Handle Allow directive
+            elif line.lower().startswith('allow:') and current_user_agents:
+                path = line[6:].strip()
+                for ua in current_user_agents:
+                    if ua in rules:
+                        rules[ua]['allows'].append(path)
+            
+            # Handle Crawl-delay directive
+            elif line.lower().startswith('crawl-delay:') and current_user_agents:
+                try:
+                    delay = float(line[12:].strip())
+                    for ua in current_user_agents:
+                        if ua in rules:
+                            rules[ua]['crawl_delay'] = delay
+                except ValueError:
+                    pass
+        
+        return rules
+    
+    def _normalize_user_agent(self, user_agent):
+        """Normalize user agent for matching"""
+        return user_agent.lower().strip()
+    
+    def _path_matches(self, path, pattern):
+        """Check if a path matches a robots.txt pattern"""
+        if not pattern:
+            return False
+        
+        # Handle wildcard patterns
+        if '*' in pattern:
+            # Convert robots.txt wildcards to regex
+            regex_pattern = pattern.replace('*', '.*')
+            try:
+                return bool(re.match(regex_pattern, path))
+            except re.error:
+                return False
+        else:
+            # Exact prefix match
+            return path.startswith(pattern)
+    
+    def can_fetch(self, user_agent, path="/"):
+        """Check if a user agent can fetch the given path"""
+        if not user_agent:
+            return True
+        
+        normalized_ua = self._normalize_user_agent(user_agent)
+        
+        # Check for exact match first
+        matching_rules = None
+        
+        # Try exact match
+        for rule_ua in self.rules:
+            if self._normalize_user_agent(rule_ua) == normalized_ua:
+                matching_rules = self.rules[rule_ua]
+                break
+        
+        # If no exact match, try wildcard match
+        if not matching_rules:
+            for rule_ua in self.rules:
+                if rule_ua == '*':
+                    matching_rules = self.rules[rule_ua]
+                    break
+        
+        # If no rules found, default to allow
+        if not matching_rules:
+            return True
+        
+        # Check allows first (they take precedence)
+        for allow_pattern in matching_rules['allows']:
+            if self._path_matches(path, allow_pattern):
+                return True
+        
+        # Then check disallows
+        for disallow_pattern in matching_rules['disallows']:
+            if self._path_matches(path, disallow_pattern):
+                return False
+        
+        # If no specific rule matches, allow by default
+        return True
+    
+    def crawl_delay(self, user_agent):
+        """Get crawl delay for a user agent"""
+        if not user_agent:
+            return None
+        
+        normalized_ua = self._normalize_user_agent(user_agent)
+        
+        # Check for exact match first
+        for rule_ua in self.rules:
+            if self._normalize_user_agent(rule_ua) == normalized_ua:
+                return self.rules[rule_ua]['crawl_delay']
+        
+        # If no exact match, try wildcard match
+        for rule_ua in self.rules:
+            if rule_ua == '*':
+                return self.rules[rule_ua]['crawl_delay']
+        
+        return None
+
 def normalize_url(url):
     """Normalize URL by adding protocol if missing"""
     if not url.startswith(('http://', 'https://')):
@@ -669,26 +809,15 @@ def get_robots_txt_content(url):
     except Exception as e:
         return None, str(e)
 
-def parse_robots_txt(robots_content, base_url):
-    """Parse robots.txt content and return RobotFileParser"""
-    try:
-        parser = urllib.robotparser.RobotFileParser()
-        parser.set_url(urljoin(base_url, '/robots.txt'))
-        # Parse the content directly
-        lines = robots_content.split('\n')
-        parser.parse(lines)
-        return parser
-    except Exception as e:
-        st.error(f"Error parsing robots.txt: {str(e)}")
-        return None
-
-def check_crawler_access(parser, base_url, crawlers_dict):
-    """Check access status for all crawlers"""
+def check_crawler_access(robots_content, base_url, crawlers_dict):
+    """Check access status for all crawlers using robust parser"""
     results = []
+    parser = RobustRobotsParser(robots_content, base_url)
+    
     for category, crawlers in crawlers_dict.items():
         for name, user_agent in crawlers.items():
             try:
-                can_access = parser.can_fetch(user_agent, base_url)
+                can_access = parser.can_fetch(user_agent, "/")
                 crawl_delay = parser.crawl_delay(user_agent)
                 results.append({
                     'Category': category,
@@ -727,7 +856,7 @@ def generate_insights(df, robots_content):
     elif block_rate > 40:
         insights.append(f"⚖️ **Balanced Access**: {block_rate:.1f}% of crawlers are blocked - moderate protection")
     elif block_rate > 10:
-        insights.append(f"🌐 **Open Policy**: {block_rate:.1f}% of crawlers are blocked - prioritizing visibility")
+        insights.append(f"🌍 **Open Policy**: {block_rate:.1f}% of crawlers are blocked - prioritizing visibility")
     else:
         insights.append(f"🚪 **Fully Open**: Only {block_rate:.1f}% of crawlers are blocked - maximum accessibility")
     
@@ -784,7 +913,7 @@ def generate_insights(df, robots_content):
         else:
             insights.append(f"📱 **Social Friendly**: Only {social_block_rate:.1f}% of social platforms blocked - good for sharing")
     
-    # FIXED: Robots.txt quality insights - more accurate logic
+    # Robots.txt quality insights
     if robots_content:
         lines = [line.strip() for line in robots_content.split('\n') if line.strip()]
         
@@ -839,7 +968,7 @@ url_input = st.text_input(
 if url_input != st.session_state.get('url_input', ''):
     st.session_state['url_input'] = url_input
 
-# Analyze button (removed category selection - analyzes all categories by default)
+# Analyze button (analyzes all categories by default)
 if st.button("🔍 Analyze Access Status", type="primary"):
     if url_input:
         with st.spinner("CrawlScope is analyzing robots.txt file..."):
@@ -852,141 +981,137 @@ if st.button("🔍 Analyze Access Status", type="primary"):
             if robots_content:
                 st.success(f"✅ Successfully fetched robots.txt from: {robots_url}")
                 
-                # Parse robots.txt
-                parser = parse_robots_txt(robots_content, normalized_url)
+                # Check crawler access using robust parser
+                results = check_crawler_access(robots_content, normalized_url, CRAWLERS)
                 
-                if parser:
-                    # Check crawler access for ALL categories
-                    results = check_crawler_access(parser, normalized_url, CRAWLERS)
-                    
-                    # Create DataFrame
-                    df = pd.DataFrame(results)
-                    
-                    # Display summary metrics
-                    st.subheader("📊 CrawlScope Analysis Results")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    total_crawlers = len(results)
-                    allowed_crawlers = (df['Can Access'] == True).sum()
-                    blocked_crawlers = total_crawlers - allowed_crawlers
-                    
-                    with col1:
-                        st.metric("Total Crawlers", total_crawlers)
-                    with col2:
-                        st.metric("✅ Allowed", allowed_crawlers)
-                    with col3:
-                        st.metric("❌ Blocked", blocked_crawlers)
-                    with col4:
-                        st.metric("Block Rate", f"{(blocked_crawlers/total_crawlers)*100:.1f}%")
-                    
-                    # FIXED: Quick Navigation using Streamlit columns instead of HTML
-                    st.markdown("---")
-                    st.subheader("📍 Quick Navigation")
-                    st.markdown("**Main Sections**")
-                    
-                    # Main section buttons
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.markdown('[📈 Category Analysis](#category-analysis)', unsafe_allow_html=True)
-                    with col2:
-                        st.markdown('[📋 Complete Analysis](#complete-analysis)', unsafe_allow_html=True)
-                    with col3:
-                        st.markdown('[📄 robots.txt Content](#robots-content)', unsafe_allow_html=True)
-                    with col4:
-                        st.markdown('[💡 Key Insights](#key-insights)', unsafe_allow_html=True)
-                    
-                    st.markdown("**Individual Categories**")
-                    
-                    # Category buttons in grid
-                    categories = list(CRAWLERS.keys())
-                    rows = [categories[i:i+3] for i in range(0, len(categories), 3)]
-                    
-                    for row in rows:
-                        cols = st.columns(len(row))
-                        for i, category in enumerate(row):
-                            with cols[i]:
-                                anchor = create_category_anchor(category)
-                                st.markdown(f'[{category}](#{anchor})', unsafe_allow_html=True)
-                    
-                    st.markdown("---")
-                    
-                    # ANCHOR: Category Analysis
-                    st.markdown('<div id="category-analysis" class="section-anchor"></div>', unsafe_allow_html=True)
-                    st.subheader("📈 Category Analysis")
-                    category_analysis = df.groupby('Category').agg({
-                        'Can Access': ['count', 'sum']
-                    }).round(2)
-                    
-                    category_analysis.columns = ['Total', 'Allowed']
-                    category_analysis['Blocked'] = category_analysis['Total'] - category_analysis['Allowed']
-                    category_analysis['Block Rate %'] = ((category_analysis['Blocked'] / category_analysis['Total']) * 100).round(1)
-                    
-                    st.dataframe(category_analysis, use_container_width=True)
-                    
-                    # Display results by category with ANCHORS
-                    for category in CRAWLERS.keys():
-                        if category in df['Category'].values:
-                            # ANCHOR: Individual category sections
-                            st.markdown(f'<div id="{create_category_anchor(category)}" class="section-anchor"></div>', unsafe_allow_html=True)
-                            st.subheader(f"📋 {category}")
-                            category_df = df[df['Category'] == category]
-                            
-                            # Show category summary
-                            cat_total = len(category_df)
-                            cat_allowed = (category_df['Can Access'] == True).sum()
-                            cat_blocked = cat_total - cat_allowed
-                            
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("Total", cat_total)
-                            with col2:
-                                st.metric("Allowed", cat_allowed, delta=f"{(cat_allowed/cat_total)*100:.1f}%")
-                            with col3:
-                                st.metric("Blocked", cat_blocked, delta=f"{(cat_blocked/cat_total)*100:.1f}%")
-                            
-                            # Create columns for better layout
-                            for idx, row in category_df.iterrows():
-                                col1, col2, col3 = st.columns([3, 2, 1])
-                                with col1:
-                                    st.write(f"**{row['Platform']}**")
-                                with col2:
-                                    st.write(row['Access Status'])
-                                with col3:
-                                    st.write(row['Crawl Delay'])
-                    
-                    # ANCHOR: Complete Analysis Table
-                    st.markdown('<div id="complete-analysis" class="section-anchor"></div>', unsafe_allow_html=True)
-                    st.subheader("📋 Complete Analysis Table")
-                    display_df = df[['Category', 'Platform', 'User Agent', 'Access Status', 'Crawl Delay']]
-                    st.dataframe(display_df, use_container_width=True)
-                    
-                    # ANCHOR: View robots.txt Content
-                    st.markdown('<div id="robots-content" class="section-anchor"></div>', unsafe_allow_html=True)
-                    with st.expander("📄 View robots.txt Content"):
-                        st.text(robots_content)
-                    
-                    # Download option
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download CrawlScope Results as CSV",
-                        data=csv,
-                        file_name=f"crawlscope_analysis_{urlparse(normalized_url).netloc}.csv",
-                        mime="text/csv"
-                    )
-                    
-                    # ANCHOR: Key Insights
-                    st.markdown('<div id="key-insights" class="section-anchor"></div>', unsafe_allow_html=True)
-                    st.subheader("💡 Key Insights")
-                    insights = generate_insights(df, robots_content)
-                    
-                    for insight in insights:
-                        st.info(insight)
+                # Create DataFrame
+                df = pd.DataFrame(results)
+                
+                # Display summary metrics
+                st.subheader("📊 CrawlScope Analysis Results")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                total_crawlers = len(results)
+                allowed_crawlers = (df['Can Access'] == True).sum()
+                blocked_crawlers = total_crawlers - allowed_crawlers
+                
+                with col1:
+                    st.metric("Total Crawlers", total_crawlers)
+                with col2:
+                    st.metric("✅ Allowed", allowed_crawlers)
+                with col3:
+                    st.metric("❌ Blocked", blocked_crawlers)
+                with col4:
+                    st.metric("Block Rate", f"{(blocked_crawlers/total_crawlers)*100:.1f}%")
+                
+                # Quick Navigation using Streamlit columns instead of HTML
+                st.markdown("---")
+                st.subheader("🔍 Quick Navigation")
+                st.markdown("**Main Sections**")
+                
+                # Main section buttons
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.markdown('[📈 Category Analysis](#category-analysis)', unsafe_allow_html=True)
+                with col2:
+                    st.markdown('[📋 Complete Analysis](#complete-analysis)', unsafe_allow_html=True)
+                with col3:
+                    st.markdown('[📄 robots.txt Content](#robots-content)', unsafe_allow_html=True)
+                with col4:
+                    st.markdown('[💡 Key Insights](#key-insights)', unsafe_allow_html=True)
+                
+                st.markdown("**Individual Categories**")
+                
+                # Category buttons in grid
+                categories = list(CRAWLERS.keys())
+                rows = [categories[i:i+3] for i in range(0, len(categories), 3)]
+                
+                for row in rows:
+                    cols = st.columns(len(row))
+                    for i, category in enumerate(row):
+                        with cols[i]:
+                            anchor = create_category_anchor(category)
+                            st.markdown(f'[{category}](#{anchor})', unsafe_allow_html=True)
+                
+                st.markdown("---")
+                
+                # ANCHOR: Category Analysis
+                st.markdown('<div id="category-analysis" class="section-anchor"></div>', unsafe_allow_html=True)
+                st.subheader("📈 Category Analysis")
+                category_analysis = df.groupby('Category').agg({
+                    'Can Access': ['count', 'sum']
+                }).round(2)
+                
+                category_analysis.columns = ['Total', 'Allowed']
+                category_analysis['Blocked'] = category_analysis['Total'] - category_analysis['Allowed']
+                category_analysis['Block Rate %'] = ((category_analysis['Blocked'] / category_analysis['Total']) * 100).round(1)
+                
+                st.dataframe(category_analysis, use_container_width=True)
+                
+                # Display results by category with ANCHORS
+                for category in CRAWLERS.keys():
+                    if category in df['Category'].values:
+                        # ANCHOR: Individual category sections
+                        st.markdown(f'<div id="{create_category_anchor(category)}" class="section-anchor"></div>', unsafe_allow_html=True)
+                        st.subheader(f"📋 {category}")
+                        category_df = df[df['Category'] == category]
                         
+                        # Show category summary
+                        cat_total = len(category_df)
+                        cat_allowed = (category_df['Can Access'] == True).sum()
+                        cat_blocked = cat_total - cat_allowed
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total", cat_total)
+                        with col2:
+                            st.metric("Allowed", cat_allowed, delta=f"{(cat_allowed/cat_total)*100:.1f}%")
+                        with col3:
+                            st.metric("Blocked", cat_blocked, delta=f"{(cat_blocked/cat_total)*100:.1f}%")
+                        
+                        # Create columns for better layout
+                        for idx, row in category_df.iterrows():
+                            col1, col2, col3 = st.columns([3, 2, 1])
+                            with col1:
+                                st.write(f"**{row['Platform']}**")
+                            with col2:
+                                st.write(row['Access Status'])
+                            with col3:
+                                st.write(row['Crawl Delay'])
+                
+                # ANCHOR: Complete Analysis Table
+                st.markdown('<div id="complete-analysis" class="section-anchor"></div>', unsafe_allow_html=True)
+                st.subheader("📋 Complete Analysis Table")
+                display_df = df[['Category', 'Platform', 'User Agent', 'Access Status', 'Crawl Delay']]
+                st.dataframe(display_df, use_container_width=True)
+                
+                # ANCHOR: View robots.txt Content
+                st.markdown('<div id="robots-content" class="section-anchor"></div>', unsafe_allow_html=True)
+                with st.expander("📄 View robots.txt Content"):
+                    st.text(robots_content)
+                
+                # Download option
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CrawlScope Results as CSV",
+                    data=csv,
+                    file_name=f"crawlscope_analysis_{urlparse(normalized_url).netloc}.csv",
+                    mime="text/csv"
+                )
+                
+                # ANCHOR: Key Insights
+                st.markdown('<div id="key-insights" class="section-anchor"></div>', unsafe_allow_html=True)
+                st.subheader("💡 Key Insights")
+                insights = generate_insights(df, robots_content)
+                
+                for insight in insights:
+                    st.info(insight)
+                    
             else:
                 st.error("❌ Could not fetch robots.txt file. The website might not have one or it's inaccessible.")
 
                 st.markdown("---")
-                st.markdown("### 🔄 Try Alternative URL Formats")
+                st.markdown("### 📄 Try Alternative URL Formats")
                 st.warning("**Copy any URL below and paste it into the main URL field above, then click 'Analyze Access Status' again:**")
 
                 # Parse the current URL to generate alternatives
@@ -1019,7 +1144,7 @@ if st.button("🔍 Analyze Access Status", type="primary"):
                     st.caption(f"Copy this URL ☝️ ({www_label})")
 
                 with col2:
-                    st.markdown("#### 🔒 Different Protocol")
+                    st.markdown("#### 🔐 Different Protocol")
                     if parsed_url.scheme == "https":
                         protocol_url = f"http://{parsed_url.netloc}"
                         protocol_label = "HTTP version"
@@ -1038,7 +1163,7 @@ if st.button("🔍 Analyze Access Status", type="primary"):
 
                 # Clear instructions
                 st.markdown("---")
-                st.markdown("### 📝 How to use these URLs:")
+                st.markdown("### 🔍 How to use these URLs:")
 
                 instructions_col1, instructions_col2 = st.columns(2)
 
