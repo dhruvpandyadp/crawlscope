@@ -216,6 +216,12 @@ with st.sidebar:
     **Total: 300+ verified crawlers** across all categories.
     
     Understand exactly which crawler types can access your content and optimize your robots.txt for better SEO, AI training control, and comprehensive bot management.
+    
+    ---
+    
+    **Data Sources & Attribution:**
+    
+    Bot information compiled from multiple sources including the comprehensive [Cloudflare Bot Directory](https://radar.cloudflare.com/bots/directory?kind=all) and other verified crawler databases. Special thanks to Cloudflare for maintaining their extensive bot directory.
     """)
 
 # Complete CRAWLERS dictionary
@@ -815,12 +821,23 @@ def create_category_anchor(category_name):
 
 # Main interface
 st.subheader("🌐 Website URL")
+
+# Handle session state for URL persistence
+if 'url_input' not in st.session_state:
+    st.session_state['url_input'] = ""
+
 url_input = st.text_input(
     "Enter Website URL:",
+    value=st.session_state.get('url_input', ''),
     placeholder="example.com or https://example.com",
     help="Enter the website URL you want to analyze with CrawlScope",
-    label_visibility="collapsed"
+    label_visibility="collapsed",
+    key="main_url_input"
 )
+
+# Update session state when URL changes
+if url_input != st.session_state.get('url_input', ''):
+    st.session_state['url_input'] = url_input
 
 # Analyze button (removed category selection - analyzes all categories by default)
 if st.button("🔍 Analyze Access Status", type="primary"):
@@ -967,7 +984,80 @@ if st.button("🔍 Analyze Access Status", type="primary"):
                         
             else:
                 st.error("❌ Could not fetch robots.txt file. The website might not have one or it's inaccessible.")
-                st.info("💡 This means all crawlers are typically allowed by default.")
+
+                st.markdown("---")
+                st.markdown("### 🔄 Try Alternative URL Formats")
+                st.warning("**Copy any URL below and paste it into the main URL field above, then click 'Analyze Access Status' again:**")
+
+                # Parse the current URL to generate alternatives
+                parsed_url = urlparse(normalized_url)
+                base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+                # Create columns for different URL options
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("#### 🏠 Main Domain Only")
+                    main_domain_url = base_domain
+                    st.code(main_domain_url, language="text")
+                    st.caption("Copy this URL ☝️ (base domain without any paths)")
+
+                    st.markdown("#### 🌐 WWW Version")
+                    current_netloc = parsed_url.netloc
+                    if current_netloc.startswith('www.'):
+                        # Remove www
+                        new_netloc = current_netloc[4:]
+                        www_url = f"{parsed_url.scheme}://{new_netloc}"
+                        www_label = "Without WWW"
+                    else:
+                        # Add www
+                        new_netloc = f"www.{current_netloc}"
+                        www_url = f"{parsed_url.scheme}://{new_netloc}"
+                        www_label = "With WWW"
+
+                    st.code(www_url, language="text")
+                    st.caption(f"Copy this URL ☝️ ({www_label})")
+
+                with col2:
+                    st.markdown("#### 🔒 Different Protocol")
+                    if parsed_url.scheme == "https":
+                        protocol_url = f"http://{parsed_url.netloc}"
+                        protocol_label = "HTTP version"
+                    else:
+                        protocol_url = f"https://{parsed_url.netloc}"
+                        protocol_label = "HTTPS version"
+
+                    st.code(protocol_url, language="text")
+                    st.caption(f"Copy this URL ☝️ ({protocol_label})")
+
+                    st.markdown("#### ✏️ Manual robots.txt URL")
+                    st.info("If you have a specific robots.txt URL:")
+                    robots_example = f"{base_domain}/robots.txt"
+                    st.code(robots_example, language="text")
+                    st.caption(" Copy this URL ☝️ (robots.txt path version)")
+
+                # Clear instructions
+                st.markdown("---")
+                st.markdown("### 📝 How to use these URLs:")
+
+                instructions_col1, instructions_col2 = st.columns(2)
+
+                with instructions_col1:
+                    st.markdown("**Step 1:** Click on any code box above to copy the URL")
+                    st.markdown("**Step 2:** Go back to the main URL field at the top")
+                    st.markdown("**Step 3:** Clear the field and paste the new URL")
+
+                with instructions_col2:
+                    st.markdown("**Step 4:** Click '🔍 Analyze Access Status' button")
+                    st.markdown("**Step 5:** The analysis will run with the new URL")
+                    st.markdown("**Tip:** Try different URLs until robots.txt is found")
+
+
+                st.markdown("---")
+                st.markdown("**💡 Pro Tips:**")
+                st.markdown("- Some sites block robots.txt access for security reasons")
+                st.markdown("- Try different subdomains (e.g., api.domain.com, blog.domain.com)")  
+                st.markdown("- Check if the site uses a CDN that might serve robots.txt differently")
     else:
         st.warning("⚠️ Please enter a website URL")
 
